@@ -1,56 +1,51 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-const cors = require('cors');
-require('dotenv').config();
+require("dotenv").config();
+const express = require("express");
+const bodyParser = require("body-parser");
+const nodemailer = require("nodemailer");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(cors());
 app.use(bodyParser.json());
 
-app.get("/", (req, res) => {
-  res.send("API is live");
-});
+app.post("/api/send-quote", async (req, res) => {
+  const { from, quote } = req.body;
 
-app.post('/api/distance', async (req, res) => {
-  const { origin, destination } = req.body;
-
-  if (!origin || !destination) {
-    return res.status(400).json({ error: 'Missing origin or destination ZIP code.' });
+  if (!from || !quote || !quote.totalCost) {
+    return res.status(400).json({ success: false, error: "Missing required fields" });
   }
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: "dax@volunteerdrum.com",
+    subject: "New Quote Submission",
+    text: `
+Quote submitted by: ${from}
+
+Destination: ${quote.destination}
+Miles: ${quote.miles}
+Total Weight: ${quote.totalWeight}
+Shipping Cost: $${quote.shippingCost}
+Unit Cost: $${quote.unitCost}
+Cost Per Item (with Shipping): $${quote.costPerItemWithShipping}
+Total Cost: $${quote.totalCost}
+    `
+  };
 
   try {
-    const response = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
-      params: {
-        origins: origin,
-        destinations: destination,
-        key: process.env.GOOGLE_API_KEY,
-        units: 'imperial'
-      }
-    });
-
-    const element = response.data.rows[0].elements[0];
-
-    if (element.status !== "OK") {
-      return res.status(400).json({ error: 'Invalid ZIP code or no route found.' });
-    }
-
-    const distanceMiles = (element.distance.value / 1609.34).toFixed(2);
-
-    res.json({
-      origin,
-      destination,
-      distance_miles: distanceMiles,
-      raw: element.distance.text
-    });
-  } catch (error) {
-    console.error('Distance API error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch distance.' });
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Email error:", err);
+    res.status(500).json({ success: false, error: "Email failed to send" });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
